@@ -18,23 +18,42 @@ class Board:
 
     # player enters piece into play
     def enterPiece(self, player, piece):
-        playerEntry = 10 * (player.color - 1) + 1
+        playerEntry = 10 * (player.color - 1)
         if self.board[playerEntry] != 0:
             self.board[playerEntry].knocked()
         self.board[playerEntry] = piece
         piece.setSpace(playerEntry)
 
     # player takes piece out of play
-    def leavePiece(self, piece, target):
+    def leavePiece(self, piece):
         self.board[piece.space] = 0
-        piece.setSpace(target)
+        piece.setSpace(-1)
 
+    def toString(self):
+        rep = "    " + str(self.board[8]) + str(self.board [9]) + str(self.board[10]) + "    \n" \
+              "    " + str(self.board[7]) + " " + str(self.board[11]) + "    \n" \
+              "    " + str(self.board[6]) + " " + str(self.board[12]) + "    \n" \
+              "    " + str(self.board[5]) + " " + str(self.board[13]) + "    \n" \
+              + str(self.board[0]) + str(self.board[1]) + str(self.board[2]) + str(self.board[3]) + str(self.board[4]) + " " + str(self.board[14]) + str(self.board[15]) + str(self.board[16]) + str(self.board[17]) + str(self.board[18]) + "\n" \
+              + str(self.board[39]) + "         " + str(self.board[19]) + "\n" \
+              + str(self.board[38]) + str(self.board[37]) + str(self.board[36]) + str(self.board[35]) + str(self.board[34]) + " " + str(self.board[24]) + str(self.board[23]) + str(self.board[22]) + str(self.board[21]) + str(self.board[20]) + "\n" \
+              "    " + str(self.board[33]) + " " + str(self.board[25]) + "    \n" \
+              "    " + str(self.board[32]) + " " + str(self.board[26]) + "    \n" \
+              "    " + str(self.board[31]) + " " + str(self.board[27]) + "    \n" \
+              "    " + str(self.board[30]) + str(self.board[29]) + str(self.board[28]) + "    \n"
+
+        return rep
 
 # pieces keep track on where on the board they are. if they havent entered the board they are on space 0,
-# if they have reached the safe spaces they are on -1, -2, -3 or -4
+# if they have reached the safe spaces they are on -1
 class Piece:
-    def __init__(self):
+    def __init__(self, color):
         self.space = 0
+        self.color = color
+
+    def __str__(self):
+        return str(self.color)
+
     def setSpace(self, space):
         self.space = space
 
@@ -44,10 +63,11 @@ class Piece:
 
 # color of player is encoded by enumeration from 1 through 4
 class Player:
-    def __init__(self, color):
+    def __init__(self, color, strategy):
         self.color = color
-        self.pieces = [Piece(), Piece(), Piece(), Piece()]
-        self.entryEmpty = True
+        self.strategy = strategy
+        self.pieces = [Piece(color), Piece(color), Piece(color), Piece(color)]
+        self.base = [0, 0, 0, 0]
 
 def rollDice():
     return random.randrange(1, 7)
@@ -67,13 +87,42 @@ def baseCheck(player):
             return True
     return False
 
-# TODO: calculates legal moves, moves consist of piece moved and resulting board state
+# calculates legal moves, moves consist of piece moved
 def legalMoves(board, player, roll):
     moves = []
+    entry = (player.color - 1) * 10
+    baseEntry = (player.color - 1) * 10 - 1
+    if baseEntry < 0:
+        baseEntry = 39
+
+    if finishedCheck(player):
+        return moves
     for piece in player.pieces:
-        pass
+        # piece needs to enter if possible
+        if roll == 6 and board.board[entry] == 0 and piece.space == 0:
+            moves.append(piece)
+            return moves
+        # pieces on entry must move if other pieces are still in base
+        if piece.space == entry and canMove(board, piece, roll) and baseCheck(player):
+            moves.append(piece)
+            return moves
+        # checks if piece can move out of the board into the goal
+        if piece.space + roll > baseEntry:
+            if canMove(board, piece, roll):
+                baseAim = piece.space + roll - baseEntry
+                if baseAim < 5:
+                    if player.base[baseAim - 1] == 0:
+                        moves.append(piece)
+        # all other moves
+        else:
+            if canMove(board, piece, roll):
+                moves.append(piece)
 
     return moves
+
+# TODO: determines if piece can move to field or if a friendly piece is blocking said space
+def canMove(board, piece, roll):
+    return True
 
 # determine who is the first to move. Yes this could just be done by drawing a random number
 def determineFirst():
@@ -98,17 +147,47 @@ def determineFirst():
 
     return first
 
-def playGame():
-    players = [Player(1), Player(2), Player(3), Player(4)]
-    current = players[determineFirst() - 1]
+def playGame(strategies):
+    players = [Player(1, strategies[0]), Player(2, strategies[1]), Player(3, strategies[2]), Player(4, strategies[3])]
+    rankings = [0, 0, 0, 0]
+    position = 0
+    first = random.randrange(1, 5)
+    current = players[first - 1]
     board = Board()
     while stillPlaying(players):
         roll = rollDice()
         moves = legalMoves(board, current, roll)
-        # TODO: chose which move to perform based on agents
-        chosenMove = None
-        board = chosenMove[1]
-        current = players[current.color % 4]
+        if moves:
+            chosenPiece = chooseMove(moves, current.strategy)
+            processMove(chosenPiece, board, current, roll)
+
+        # debug stuff
+        print(board.toString())
+        print("Player " + str(current.color) + " rolled a " + str(roll))
+        print("--------------------------------------------")
+
+        if finishedCheck(current):
+            rankings[position] = current.strategy
+            position += 1
+        if roll != 6 and not finishedCheck(current):
+            current = players[current.color % 4]
+
+# processes Moving a chosen piece on a specific board
+def processMove(chosenPiece, board, player, roll):
+    baseEntry = (player.color - 1) * 10 - 1
+    if baseEntry < 0:
+        baseEntry = 39
+
+    if chosenPiece.space == 0:
+        board.enterPiece(player, chosenPiece)
+    elif chosenPiece.space + roll > baseEntry:
+        board.leavePiece(chosenPiece)
+    else:
+        board.moveFromTo(chosenPiece.space, (chosenPiece.space + roll) % 40)
+
+# TODO: determines which move is chosen based on the specified strategy
+def chooseMove(moves, strategy):
+    return moves[0]
 
 def stillPlaying(players):
     playingCount = 0
@@ -120,3 +199,5 @@ def stillPlaying(players):
     else:
         return False
 
+if __name__ == '__main__':
+    playGame([0, 0, 0, 0])
