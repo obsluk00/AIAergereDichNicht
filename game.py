@@ -169,7 +169,7 @@ def canMove(board, piece, player, roll):
         for i in range(4):
             if player.base[i] == piece:
                 pieceIndex = i
-        aim = i + roll
+        aim = pieceIndex + roll
         if aim > 3:
             return False
         elif player.base[aim] != 0:
@@ -223,7 +223,7 @@ def playGame(strategies):
         print("Player " + str(current.color) + " rolled a " + str(roll))
         moves = legalMoves(board, current, roll)
         if moves:
-            chosenPiece = chooseMove(moves, current.strategy)
+            chosenPiece = chooseMove(board, moves, roll, current)
             processMove(chosenPiece, board, current, roll)
 
         # debug stuff
@@ -257,15 +257,93 @@ def processMove(chosenPiece, board, player, roll):
             if player.base[i] == chosenPiece:
                 player.base[i + roll] = chosenPiece
                 player.base[i] = 0
+                return
     elif checkBaseEntry(chosenPiece, roll):
-        player.base[chosenPiece.space + roll - baseEntry - 1] = chosenPiece
+        leftOnEntry = chosenPiece.space + roll - baseEntry
+        print("Im on " + str(chosenPiece.space))
+        print("My entry is on " + str(baseEntry))
+        print("I rolled a " + str(roll))
+        player.base[leftOnEntry - 1] = chosenPiece
         board.leavePiece(chosenPiece)
     else:
         board.moveFromTo(chosenPiece.space, (chosenPiece.space + roll) % 40)
 
-# TODO: determines which move is chosen based on the specified strategy
-def chooseMove(moves, strategy):
-    return random.choice(moves)
+# determines which move is chosen based on the specified strategy
+# TODO: add more sophisticated agent
+def chooseMove(board, moves, roll, player):
+    if player.strategy == "Random":
+        return random.choice(moves)
+    elif player.strategy == "TryToKnock":
+        closest = random.choice(moves)
+        closestDistance = disToOpponent(board, closest, roll)
+        for piece in moves:
+            if doesItKnock(board, piece, roll):
+                return piece
+            else:
+                distance = disToOpponent(board, piece, roll)
+                if distance > closestDistance:
+                    closest = piece
+                    closestDistance = distance
+        return closest
+    elif player.strategy == "RushOnePiece":
+        ordered = piecesOrdered(moves)
+        if ordered:
+            return ordered[0]
+        else:
+            return random.choice(moves)
+    elif player.strategy == "StickTogether":
+        ordered = piecesOrdered(moves)
+        if ordered:
+            return ordered[-1]
+        else:
+            return random.choice(moves)
+    else:
+        return moves[0]
+
+
+# checks if a move would knock an opponents piece
+def doesItKnock(board, piece, roll):
+    if piece.space == "base" or piece.space < 0:
+        return False
+    target = (piece.space + roll) % 40
+    if checkBaseEntry(piece, roll):
+        return False
+    elif board.board[target] != 0:
+        return True
+    else:
+        return False
+
+# TODO: calculates distance to nearest knockable opponent
+def disToOpponent(board, piece, roll):
+    return 0
+
+# calculates distance to base entry
+def disToBase(piece):
+    if piece.space == "base":
+        return 99
+    if piece.space < 0:
+        return -1
+
+    entry = (piece.color - 1) * 10
+    baseEntry = (piece.color - 1) * 10 - 1
+    if baseEntry < 0:
+        baseEntry = 39
+
+    progress = 39 - piece.space - entry
+    if progress < 0:
+        return baseEntry - piece.space
+    else:
+        return progress
+
+# returns ordered array of a players pieces (which they have on the board) with their positions from first to last
+def piecesOrdered(moves):
+    ordered = []
+    for piece in moves:
+        if piece.space != "base" and piece.space >= 0:
+            ordered.append(piece)
+    ordered.sort(key=disToBase)
+    return ordered
+
 
 if __name__ == '__main__':
-    print(playGame(["heh", "ho", "hihi", "ha"]))
+    print(playGame(["Random", "TryToKnock", "RushOnePiece", "StickTogether"]))
