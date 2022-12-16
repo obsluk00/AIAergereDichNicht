@@ -119,7 +119,7 @@ def legalMoves(board, player, roll):
             continue
 
         # checks if piece can move out of the board into the goal
-        if piece.space + roll > baseEntry and piece.space <= baseEntry:
+        if checkBaseEntry(piece, roll):
             if canMove(board, piece, player, roll):
                 baseAim = piece.space + roll - baseEntry
                 if baseAim < 5:
@@ -131,6 +131,18 @@ def legalMoves(board, player, roll):
                 moves.append(piece)
 
     return moves
+
+# checks if a piece passes its base entry
+def checkBaseEntry(piece, roll):
+    baseEntry = (piece.color - 1) * 10 - 1
+    if baseEntry < 0:
+        baseEntry = 39
+    for i in range(1, roll):
+        if piece.space + i == baseEntry:
+            return True
+    return False
+
+
 
 # determines if piece can move to field or if a friendly piece is blocking said space
 def canMove(board, piece, player, roll):
@@ -144,7 +156,7 @@ def canMove(board, piece, player, roll):
         return False
 
     # check if piece tries to enter base
-    if piece.space + roll > baseEntry and piece.space <= baseEntry:
+    if checkBaseEntry(piece, roll):
         baseTarget = piece.space + roll - baseEntry
         if baseTarget < 5 and player.base[baseTarget - 1] == 0:
             return True
@@ -153,14 +165,17 @@ def canMove(board, piece, player, roll):
 
     # check if piece is in base
     if piece.space < 0:
+        pieceIndex = -1
         for i in range(4):
             if player.base[i] == piece:
-                if i + roll > 4:
-                    return False
-                elif player.base[i + roll] != 0:
-                    return False
-                else:
-                    return True
+                pieceIndex = i
+        aim = i + roll
+        if aim > 3:
+            return False
+        elif player.base[aim] != 0:
+            return False
+        else:
+            return True
 
     # all other
     if board.board[target] == 0:
@@ -197,10 +212,13 @@ def playGame(strategies):
     players = [Player(1, strategies[0]), Player(2, strategies[1]), Player(3, strategies[2]), Player(4, strategies[3])]
     rankings = [0, 0, 0, 0]
     position = 0
+    playing = 4
+    turns = 0
     first = random.randrange(1, 5)
     current = players[first - 1]
     board = Board()
-    while stillPlaying(players):
+    while playing > 1:
+        turns += 1
         roll = rollDice()
         print("Player " + str(current.color) + " rolled a " + str(roll))
         moves = legalMoves(board, current, roll)
@@ -212,11 +230,19 @@ def playGame(strategies):
         print(board.toString())
         print("--------------------------------------------")
 
+        if roll != 6 and not finishedCheck(current):
+            current = players[current.color % playing]
+
         if finishedCheck(current):
             rankings[position] = current.strategy
             position += 1
-        if roll != 6 and not finishedCheck(current):
-            current = players[current.color % 4]
+            playing -= 1
+            players.remove(current)
+            current = players[current.color % playing]
+
+    rankings[position] = players[0].strategy
+    print("Game took " + str(turns) + " turns.")
+    return rankings
 
 # processes Moving a chosen piece on a specific board
 def processMove(chosenPiece, board, player, roll):
@@ -229,27 +255,17 @@ def processMove(chosenPiece, board, player, roll):
     elif chosenPiece.space < 0:
         for i in range(4):
             if player.base[i] == chosenPiece:
-                player.base[i + roll] == chosenPiece
+                player.base[i + roll] = chosenPiece
                 player.base[i] = 0
-    elif chosenPiece.space + roll > baseEntry and chosenPiece.space <= baseEntry:
-        player.base[(chosenPiece.space + roll) - baseEntry - 1] = chosenPiece
+    elif checkBaseEntry(chosenPiece, roll):
+        player.base[chosenPiece.space + roll - baseEntry - 1] = chosenPiece
         board.leavePiece(chosenPiece)
     else:
         board.moveFromTo(chosenPiece.space, (chosenPiece.space + roll) % 40)
 
 # TODO: determines which move is chosen based on the specified strategy
 def chooseMove(moves, strategy):
-    return moves[0]
-
-def stillPlaying(players):
-    playingCount = 0
-    for player in players:
-        if not finishedCheck(player):
-            playingCount += 1
-    if playingCount > 1:
-        return True
-    else:
-        return False
+    return random.choice(moves)
 
 if __name__ == '__main__':
-    playGame([0, 0, 0, 0])
+    print(playGame(["heh", "ho", "hihi", "ha"]))
