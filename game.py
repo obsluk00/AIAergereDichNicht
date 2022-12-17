@@ -298,9 +298,28 @@ def chooseMove(board, moves, roll, player):
             return ordered[-1]
         else:
             return random.choice(moves)
+    elif player.strategy == "LookAhead":
+        return lookahead(board, moves, roll, player)
     else:
         return moves[0]
 
+# TODO: minimax tree of fixed depth to return best move
+def lookahead(board, moves, roll, player):
+    return random.choice(moves)
+
+# heuristic to determine boards value for a player
+def heuristic(board, player):
+    playerSum = 0
+    opponentsSum = 0
+    for i in board.board:
+        if i != 0:
+            if i.color == player.color:
+                playerSum += disToBase(i)
+            else:
+                opponentsSum += disToBase(i)
+
+    # the larger the opponents sum the better for us, the lower our dist to base sum the better for us
+    return opponentsSum - playerSum
 
 # checks if a move would knock an opponents piece
 def doesItKnock(board, piece, roll):
@@ -335,7 +354,7 @@ def disToOpponent(board, piece, roll):
 # calculates distance to base entry
 def disToBase(piece):
     if piece.space == "base":
-        return 99
+        return 40
     if piece.space < 0:
         return -1
 
@@ -362,11 +381,16 @@ def piecesOrdered(moves):
 
 if __name__ == '__main__':
 
-    ratings = {"Random" : trueskill.Rating(), "TryToKnock" : trueskill.Rating(), "RushOnePiece" : trueskill.Rating(), "StickTogether" : trueskill.Rating()}
+    strategies = ["Random", "TryToKnock", "RushOnePiece", "StickTogether", "LookAhead"]
+    ratings = {"Random" : trueskill.Rating(), "TryToKnock" : trueskill.Rating(), "RushOnePiece" : trueskill.Rating(), "StickTogether" : trueskill.Rating(), "LookAhead" : trueskill.Rating()}
+    stats = {"Random" : [0, 0, 0, 0], "TryToKnock" : [0, 0, 0, 0], "RushOnePiece" : [0, 0, 0, 0], "StickTogether" : [0, 0, 0, 0], "LookAhead" : [0, 0, 0, 0]}
 
-    for i in range(2000):
-        results = playGame(["Random", "TryToKnock", "RushOnePiece", "StickTogether"])
+    for i in range(20):
+        players = random.sample(strategies, 4)
+        results = playGame(players)
         print("Results of game: " + str(results))
+        for i in range(4):
+            stats[results[i]][i] += 1
         r1 = ratings[results[0]]
         r2 = ratings[results[1]]
         r3 = ratings[results[2]]
@@ -380,3 +404,6 @@ if __name__ == '__main__':
         print("Updated Ratings: ")
         for i in ratings:
             print(i + ": " + str(ratings[i]))
+    print("Stats: ")
+    for i in stats:
+        print(i + ": " + str(stats[i]))
