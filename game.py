@@ -1,4 +1,5 @@
 # holds the gamelogic and gameloop
+import copy
 import random
 import time
 import trueskill as trueskill
@@ -6,8 +7,15 @@ import trueskill as trueskill
 
 # board is represented by array of 40 fields, index will keep track of loop
 class Board:
-    def __init__(self):
+    def __init__(self, players):
+        self.players = players
         self.board = [0] * 40
+
+    # returns player corresponding to color
+    def getPlayer(self, color):
+        for player in self.players:
+            if player.color == color:
+                return player
 
     # piece moved from to
     def moveFromTo(self, start, end):
@@ -220,7 +228,7 @@ def playGame(strategies):
     turns = 0
     first = random.randrange(1, 5)
     current = players[first - 1]
-    board = Board()
+    board = Board(players)
     while playing > 1:
         turns += 1
         roll = rollDice()
@@ -228,7 +236,7 @@ def playGame(strategies):
         moves = legalMoves(board, current, roll)
         if moves:
             chosenPiece = chooseMove(board, moves, roll, current)
-            processMove(chosenPiece, board, current, roll)
+            processMove(chosenPiece, board, roll)
 
         # debug stuff
         #print(board.toString())
@@ -249,7 +257,8 @@ def playGame(strategies):
     return rankings
 
 # processes Moving a chosen piece on a specific board
-def processMove(chosenPiece, board, player, roll):
+def processMove(chosenPiece, board, roll):
+    player = board.getPlayer(chosenPiece.color)
     baseEntry = (player.color - 1) * 10 - 1
     if baseEntry < 0:
         baseEntry = 39
@@ -270,7 +279,6 @@ def processMove(chosenPiece, board, player, roll):
         board.moveFromTo(chosenPiece.space, (chosenPiece.space + roll) % 40)
 
 # determines which move is chosen based on the specified strategy
-# TODO: add more sophisticated agent
 def chooseMove(board, moves, roll, player):
     if player.strategy == "Random":
         return random.choice(moves)
@@ -298,24 +306,41 @@ def chooseMove(board, moves, roll, player):
             return ordered[-1]
         else:
             return random.choice(moves)
-    elif player.strategy == "LookAhead":
+    elif player.strategy == "LookOneAhead":
         return lookahead(board, moves, roll, player)
     else:
         return moves[0]
 
-# TODO: minimax tree of fixed depth to return best move
-def lookahead(board, moves, roll, player):
-    return random.choice(moves)
+# TODO: increase depth
+# heuristic based minimax tree of fixed depth to return best move
+def lookahead(board, originalMoves, roll, player):
+    copied = copy.deepcopy(board)
+    moves = legalMoves(copied, copied.getPlayer(player.color), roll)
+    bestMove = None
+    bestH = -99999
+    for move in moves:
+        unmovedMove = copy.deepcopy(move)
+        copied = copy.deepcopy(board)
+        processMove(move, copied, roll)
+        h = heuristic(copied, copied.getPlayer(player.color))
+        if h > bestH:
+            bestH = h
+            bestMove = unmovedMove
+    for piece in originalMoves:
+        if piece.color == bestMove.color and piece.space == bestMove.space:
+            return piece
 
 # heuristic to determine boards value for a player
 def heuristic(board, player):
     playerSum = 0
     opponentsSum = 0
+
+    for i in player.pieces:
+        playerSum += disToBase(i)
+
     for i in board.board:
         if i != 0:
-            if i.color == player.color:
-                playerSum += disToBase(i)
-            else:
+            if i.color != player.color:
                 opponentsSum += disToBase(i)
 
     # the larger the opponents sum the better for us, the lower our dist to base sum the better for us
@@ -381,14 +406,14 @@ def piecesOrdered(moves):
 
 if __name__ == '__main__':
 
-    strategies = ["Random", "TryToKnock", "RushOnePiece", "StickTogether", "LookAhead"]
-    ratings = {"Random" : trueskill.Rating(), "TryToKnock" : trueskill.Rating(), "RushOnePiece" : trueskill.Rating(), "StickTogether" : trueskill.Rating(), "LookAhead" : trueskill.Rating()}
-    stats = {"Random" : [0, 0, 0, 0], "TryToKnock" : [0, 0, 0, 0], "RushOnePiece" : [0, 0, 0, 0], "StickTogether" : [0, 0, 0, 0], "LookAhead" : [0, 0, 0, 0]}
+    strategies = ["Random", "TryToKnock", "RushOnePiece", "StickTogether", "LookOneAhead"]
+    ratings = {"Random" : trueskill.Rating(), "TryToKnock" : trueskill.Rating(), "RushOnePiece" : trueskill.Rating(), "StickTogether" : trueskill.Rating(), "LookOneAhead" : trueskill.Rating()}
+    stats = {"Random" : [0, 0, 0, 0], "TryToKnock" : [0, 0, 0, 0], "RushOnePiece" : [0, 0, 0, 0], "StickTogether" : [0, 0, 0, 0], "LookOneAhead" : [0, 0, 0, 0]}
 
-    for i in range(20):
+    for i in range(200):
         players = random.sample(strategies, 4)
         results = playGame(players)
-        print("Results of game: " + str(results))
+        #print("Results of game: " + str(results))
         for i in range(4):
             stats[results[i]][i] += 1
         r1 = ratings[results[0]]
@@ -401,9 +426,13 @@ if __name__ == '__main__':
         ratings[results[2]] = r3[0]
         ratings[results[3]] = r4[0]
 
-        print("Updated Ratings: ")
-        for i in ratings:
-            print(i + ": " + str(ratings[i]))
+        #print("Updated Ratings: ")
+        #for i in ratings:
+        #    print(i + ": " + str(ratings[i]))
     print("Stats: ")
     for i in stats:
         print(i + ": " + str(stats[i]))
+
+    print("Updated Ratings: ")
+    for i in ratings:
+        print(i + ": " + str(ratings[i]))
