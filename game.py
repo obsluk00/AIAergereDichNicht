@@ -1,5 +1,8 @@
 # holds the gamelogic and gameloop
 import random
+import time
+import trueskill as trueskill
+
 
 # board is represented by array of 40 fields, index will keep track of loop
 class Board:
@@ -60,7 +63,6 @@ class Piece:
     # piece was knocked out
     def knocked(self):
         self.space = "base"
-        print("knocked!")
 
 # color of player is encoded by enumeration from 1 through 4
 class Player:
@@ -134,6 +136,8 @@ def legalMoves(board, player, roll):
 
 # checks if a piece passes its base entry
 def checkBaseEntry(piece, roll):
+    if piece.space == "base":
+        return False
     baseEntry = (piece.color - 1) * 10 - 1
     if baseEntry < 0:
         baseEntry = 39
@@ -220,15 +224,15 @@ def playGame(strategies):
     while playing > 1:
         turns += 1
         roll = rollDice()
-        print("Player " + str(current.color) + " rolled a " + str(roll))
+        #print("Player " + str(current.color) + " rolled a " + str(roll))
         moves = legalMoves(board, current, roll)
         if moves:
             chosenPiece = chooseMove(board, moves, roll, current)
             processMove(chosenPiece, board, current, roll)
 
         # debug stuff
-        print(board.toString())
-        print("--------------------------------------------")
+        #print(board.toString())
+        #print("--------------------------------------------")
 
         if roll != 6 and not finishedCheck(current):
             current = players[current.color % playing]
@@ -241,7 +245,7 @@ def playGame(strategies):
             current = players[current.color % playing]
 
     rankings[position] = players[0].strategy
-    print("Game took " + str(turns) + " turns.")
+    #print("Game took " + str(turns) + " turns.")
     return rankings
 
 # processes Moving a chosen piece on a specific board
@@ -260,9 +264,6 @@ def processMove(chosenPiece, board, player, roll):
                 return
     elif checkBaseEntry(chosenPiece, roll):
         leftOnEntry = chosenPiece.space + roll - baseEntry
-        print("Im on " + str(chosenPiece.space))
-        print("My entry is on " + str(baseEntry))
-        print("I rolled a " + str(roll))
         player.base[leftOnEntry - 1] = chosenPiece
         board.leavePiece(chosenPiece)
     else:
@@ -313,9 +314,23 @@ def doesItKnock(board, piece, roll):
     else:
         return False
 
-# TODO: calculates distance to nearest knockable opponent
+# calculates distance to nearest knockable opponent after move
 def disToOpponent(board, piece, roll):
-    return 0
+    # if pieces enters the safe base after the roll it will not be able to knock anyone
+    if checkBaseEntry(piece, roll):
+        return 99
+
+    if piece.space == "base":
+        spaceAfterRoll = (piece.color - 1) * 10
+    else:
+        spaceAfterRoll = (piece.space + roll) % 40
+
+    for i in range(1, 40):
+        checkedIdx = (spaceAfterRoll + i) % 40
+        checking = board.board[checkedIdx]
+        if checking != 0 and checking.color != piece.color:
+            return i
+    return 99
 
 # calculates distance to base entry
 def disToBase(piece):
@@ -346,4 +361,22 @@ def piecesOrdered(moves):
 
 
 if __name__ == '__main__':
-    print(playGame(["Random", "TryToKnock", "RushOnePiece", "StickTogether"]))
+
+    ratings = {"Random" : trueskill.Rating(), "TryToKnock" : trueskill.Rating(), "RushOnePiece" : trueskill.Rating(), "StickTogether" : trueskill.Rating()}
+
+    for i in range(2000):
+        results = playGame(["Random", "TryToKnock", "RushOnePiece", "StickTogether"])
+        print("Results of game: " + str(results))
+        r1 = ratings[results[0]]
+        r2 = ratings[results[1]]
+        r3 = ratings[results[2]]
+        r4 = ratings[results[3]]
+        r1, r2, r3, r4 = trueskill.rate([(r1,), (r2,), (r3,), (r4,)])
+        ratings[results[0]] = r1[0]
+        ratings[results[1]] = r2[0]
+        ratings[results[2]] = r3[0]
+        ratings[results[3]] = r4[0]
+
+        print("Updated Ratings: ")
+        for i in ratings:
+            print(i + ": " + str(ratings[i]))
