@@ -3,7 +3,9 @@ import copy
 import random
 import time
 import trueskill as trueskill
+import sys
 
+sys.setrecursionlimit(3000)
 
 # board is represented by array of 40 fields, index will keep track of loop
 class Board:
@@ -16,6 +18,13 @@ class Board:
         for player in self.players:
             if player.color == color:
                 return player
+
+    def playingCount(self):
+        res = 0
+        for player in self.players:
+            if not finishedCheck(player):
+                res += 1
+        return res
 
     # piece moved from to
     def moveFromTo(self, start, end):
@@ -220,42 +229,6 @@ def determineFirst():
 
     return first
 
-def playGame(strategies):
-    players = [Player(1, strategies[0]), Player(2, strategies[1]), Player(3, strategies[2]), Player(4, strategies[3])]
-    rankings = [0, 0, 0, 0]
-    position = 0
-    playing = 4
-    turns = 0
-    first = random.randrange(1, 5)
-    current = players[first - 1]
-    board = Board(players)
-    while playing > 1:
-        turns += 1
-        roll = rollDice()
-        #print("Player " + str(current.color) + " rolled a " + str(roll))
-        moves = legalMoves(board, current, roll)
-        if moves:
-            chosenPiece = chooseMove(board, moves, roll, current)
-            processMove(chosenPiece, board, roll)
-
-        # debug stuff
-        #print(board.toString())
-        #print("--------------------------------------------")
-
-        if roll != 6 and not finishedCheck(current):
-            current = players[current.color % playing]
-
-        if finishedCheck(current):
-            rankings[position] = current.strategy
-            position += 1
-            playing -= 1
-            players.remove(current)
-            current = players[current.color % playing]
-
-    rankings[position] = players[0].strategy
-    #print("Game took " + str(turns) + " turns.")
-    return rankings
-
 # processes Moving a chosen piece on a specific board
 def processMove(chosenPiece, board, roll):
     player = board.getPlayer(chosenPiece.color)
@@ -279,7 +252,7 @@ def processMove(chosenPiece, board, roll):
         board.moveFromTo(chosenPiece.space, (chosenPiece.space + roll) % 40)
 
 # determines which move is chosen based on the specified strategy
-def chooseMove(board, moves, roll, player):
+def chooseMove(board, moves, roll, player, rankings):
     if player.strategy == "Random":
         return random.choice(moves)
     elif player.strategy == "TryToKnock":
@@ -308,11 +281,47 @@ def chooseMove(board, moves, roll, player):
             return random.choice(moves)
     elif player.strategy == "LookOneAhead":
         return lookahead(board, moves, roll, player)
+    elif player.strategy == "MCTS":
+        if len(moves) == 1:
+            return moves[0]
+        return mcts(board, moves, roll, rankings)
     else:
-        return moves[0]
+        return random.choice(moves)
 
-# TODO: increase depth
-# heuristic based minimax tree of fixed depth to return best move
+# mcts simulating 100 games for each move in moves, returning the one which won the most games
+def mcts(board, originalMoves, roll, rankings):
+    winningPos = 4 - board.playingCount()
+    highestWins = 0
+    bestMove = random.choice(originalMoves)
+    for move in originalMoves:
+        boardCopy = copy.deepcopy(board)
+        playerCopy = boardCopy.getPlayer(move.color)
+        playerCopy.strategy = "Me"
+        copyMoves = legalMoves(boardCopy, playerCopy, roll)
+        copiedMove = None
+        for copyMove in copyMoves:
+            if copyMove.space == move.space:
+                copiedMove = copyMove
+        processMove(copiedMove, boardCopy, roll)
+        # winning move
+        if boardCopy.playingCount() != board.playingCount():
+            return move
+        wins = 0
+        for i in range(100):
+            newCopy = copy.deepcopy(boardCopy)
+            if roll == 6:
+                next = newCopy.players[move.color - 1]
+            else:
+                next = newCopy.players[move.color % newCopy.playingCount()]
+            results = playGame(newCopy, next, rankings, winningPos, newCopy.playingCount(), 0)
+            if results[winningPos] == "Me":
+                wins += 1
+        if wins > highestWins:
+            highestWins = wins
+            bestMove = move
+    return bestMove
+
+# one step look ahead using heuristic
 def lookahead(board, originalMoves, roll, player):
     copied = copy.deepcopy(board)
     moves = legalMoves(copied, copied.getPlayer(player.color), roll)
@@ -403,19 +412,58 @@ def piecesOrdered(moves):
     ordered.sort(key=disToBase)
     return ordered
 
+def playGame(board, current, rankings, position, playing, turns):
+    players = board.players
+    if playing > 1:
+        turns += 1
+        roll = rollDice()
+        #print("Player " + str(current.color) + " rolled a " + str(roll))
+        moves = legalMoves(board, current, roll)
+        if moves:
+            chosenPiece = chooseMove(board, moves, roll, current, rankings)
+            processMove(chosenPiece, board, roll)
+
+        # debug stuff
+        #print(board.toString())
+        #print("--------------------------------------------")
+
+        if roll != 6 and not finishedCheck(current):
+            current = players[current.color % playing]
+
+        if finishedCheck(current):
+            rankings[position] = current.strategy
+            position += 1
+            playing -= 1
+            players.remove(current)
+            current = players[current.color % playing]
+        return playGame(board, current, rankings, position, playing, turns)
+    else:
+        rankings[position] = players[0].strategy
+        #print("Game took " + str(turns) + " turns.")
+        return rankings
 
 if __name__ == '__main__':
 
-    strategies = ["Random", "TryToKnock", "RushOnePiece", "StickTogether", "LookOneAhead"]
-    ratings = {"Random" : trueskill.Rating(), "TryToKnock" : trueskill.Rating(), "RushOnePiece" : trueskill.Rating(), "StickTogether" : trueskill.Rating(), "LookOneAhead" : trueskill.Rating()}
-    stats = {"Random" : [0, 0, 0, 0], "TryToKnock" : [0, 0, 0, 0], "RushOnePiece" : [0, 0, 0, 0], "StickTogether" : [0, 0, 0, 0], "LookOneAhead" : [0, 0, 0, 0]}
+    allStrategies = ["Random", "TryToKnock", "RushOnePiece", "StickTogether", "LookOneAhead", "MCTS"]
+    ratings = {"Random" : trueskill.Rating(), "TryToKnock" : trueskill.Rating(), "RushOnePiece" : trueskill.Rating(), "StickTogether" : trueskill.Rating(), "LookOneAhead" : trueskill.Rating(), "MCTS" : trueskill.Rating()}
+    stats = {"Random" : [0, 0, 0, 0], "TryToKnock" : [0, 0, 0, 0], "RushOnePiece" : [0, 0, 0, 0], "StickTogether" : [0, 0, 0, 0], "LookOneAhead" : [0, 0, 0, 0], "MCTS" : [0, 0, 0, 0]}
 
-    for i in range(200):
-        players = random.sample(strategies, 4)
-        results = playGame(players)
+    for i in range(100):
+        strategies = random.sample(allStrategies, 4)
+        players = [Player(1, strategies[0]), Player(2, strategies[1]), Player(3, strategies[2]),
+                   Player(4, strategies[3])]
+        board = Board(players)
+        first = random.randrange(1, 5)
+        results = playGame(board, players[first - 1], [0, 0, 0, 0], 0, 4, 0)
+
+        # write results of game down as backup
         #print("Results of game: " + str(results))
-        for i in range(4):
-            stats[results[i]][i] += 1
+        f = open("results.csv", "a")
+        f.write(results[0] + "; " + results[1] + "; " + results[2] + "; " + results[3] + "\n")
+        f.close()
+
+        for j in range(4):
+            stats[results[j]][j] += 1
         r1 = ratings[results[0]]
         r2 = ratings[results[1]]
         r3 = ratings[results[2]]
@@ -426,9 +474,14 @@ if __name__ == '__main__':
         ratings[results[2]] = r3[0]
         ratings[results[3]] = r4[0]
 
-        #print("Updated Ratings: ")
-        #for i in ratings:
-        #    print(i + ": " + str(ratings[i]))
+        if i % 5 == 0:
+            print("Updated Ratings after " + str(i + 1) + " games:")
+            for j in ratings:
+                print(j + ": " + str(ratings[j]))
+            print("Stats after " + str(i + 1) + " games:")
+            for j in stats:
+                print(j + ": " + str(stats[j]))
+
     print("Stats: ")
     for i in stats:
         print(i + ": " + str(stats[i]))
